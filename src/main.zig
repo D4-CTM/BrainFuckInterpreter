@@ -1,15 +1,13 @@
 const std = @import("std");
-const QueueMaker = @import("./structures.zig.zig");
+const File = std.fs.File;
 const stdPrint = std.debug.print;
-
-const TokenQueue = QueueMaker.Queue(u8);
 
 const BrainFuckingErrors = error{
     LOOP_NOT_INITALIZED,
     LOOP_NOT_TERMINATED,
 };
 
-const tokens = enum(c_char) {
+const Tokens = enum(c_char) {
     const MOVE_LEFT = '<';
     const MOVE_RIGHT = '>';
     const INCREASE = '+';
@@ -84,30 +82,73 @@ const BF_array = struct {
 
     pub fn execute(self: *BF_array, action: u8) void {
         switch (action) {
-            tokens.INCREASE => self.increseCurrentCell(),
-            tokens.DECREASE => self.decreseCurrentCell(),
-            tokens.MOVE_LEFT => self.movePointerLeft(),
-            tokens.MOVE_RIGHT => self.movePointerRight(),
-            tokens.PRINT => self.printCurrentCell(),
+            Tokens.INCREASE => self.increseCurrentCell(),
+            Tokens.DECREASE => self.decreseCurrentCell(),
+            Tokens.MOVE_LEFT => self.movePointerLeft(),
+            Tokens.MOVE_RIGHT => self.movePointerRight(),
+            Tokens.PRINT => self.printCurrentCell(),
             else => {},
         }
     }
 };
 
-pub fn main() BrainFuckingErrors!void {
-    var brainfuck: BF_array = .{};
-
-    const reader_flag = std.fs.File.OpenFlags{ .mode = .read_only };
-    const file = try std.fs.cwd().openFile("test.bf", reader_flag);
-    defer file.close();
-
-    var buf_reader = std.io.bufferedReader(file.reader());
-    var in_stream = buf_reader.reader();
-
+fn brainfuckLoop(file: *File, brainfuck: *BF_array, startPos: u32) !u32 {
     var buff: [1]u8 = undefined;
-    while (try in_stream.read(&buff) > 0) {
-        brainfuck.execute(buff[0]);
+    var index: u32 = startPos;
+
+    while (try file.read(&buff) > 0) {
+        if (buff[0] == Tokens.LOOP_START) {
+            index = brainfuckLoop(file, brainfuck, index + 1) catch |err| {
+                return err;
+            };
+
+            try file.seekTo(index);
+        } else if (buff[0] == Tokens.LOOP_END) {
+            if (startPos == 0) {
+                return BrainFuckingErrors.LOOP_NOT_INITALIZED;
+            }
+
+            if (brainfuck.getCurrentCell().content != 0) {
+                return startPos - 1;
+            }
+
+            return index + 1;
+        } else {
+            brainfuck.execute(buff[0]);
+            index += 1;
+        }
+    }
+    if (startPos != 0) {
+        return BrainFuckingErrors.LOOP_NOT_TERMINATED;
     }
 
-    stdPrint("\n", .{});
+    return index;
+}
+
+pub fn main() !void {
+    var args = std.process.args();
+    var brainfuck: BF_array = .{};
+
+    _ = args.next();
+    while (args.next()) |file_path| {
+        const reader_flag = std.fs.File.OpenFlags{ .mode = .read_only };
+        var file = try std.fs.cwd().openFile(file_path, reader_flag);
+        defer file.close();
+
+        _ = brainfuckLoop(&file, &brainfuck, 0) catch |err| {
+            switch (err) {
+                BrainFuckingErrors.LOOP_NOT_INITALIZED => {
+                    stdPrint("Crash!\nTried to end a loop without being in one!", .{});
+                },
+
+                BrainFuckingErrors.LOOP_NOT_TERMINATED => {
+                    stdPrint("Crash!\nA loop was started but not finished!", .{});
+                },
+
+                else => {},
+            }
+        };
+
+        stdPrint("\n", .{});
+    }
 }
