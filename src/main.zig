@@ -23,7 +23,7 @@ const BF_cell = struct {
     content: u8 = 0,
 
     pub fn increment(self: *BF_cell) void {
-        if (self.content == 255) {
+        if (self.content == 127) {
             self.content = 0;
             return;
         }
@@ -32,7 +32,7 @@ const BF_cell = struct {
 
     pub fn decrease(self: *BF_cell) void {
         if (self.content == 0) {
-            self.content = 255;
+            self.content = 127;
             return;
         }
         self.content -= 1;
@@ -46,14 +46,14 @@ const BF_array = struct {
 
     pub fn movePointerLeft(self: *BF_array) void {
         if (self.cell_pointer == 0) {
-            self.cell_pointer = self.cells.len;
+            self.cell_pointer = self.cells.len - 1;
             return;
         }
         self.cell_pointer -= 1;
     }
 
     pub fn movePointerRight(self: *BF_array) void {
-        if (self.cell_pointer == self.cells.len) {
+        if (self.cell_pointer == self.cells.len - 1) {
             self.cell_pointer = 0;
             return;
         }
@@ -75,9 +75,20 @@ const BF_array = struct {
         self.cells[pointer].decrease();
     }
 
-    pub fn getCurrentCell(self: *BF_array) BF_cell {
+    pub fn getCurrentCell(self: *BF_array) *BF_cell {
         const pointer: u32 = self.cell_pointer;
-        return self.cells[pointer];
+        return &self.cells[pointer];
+    }
+
+    pub fn captureKeyStroke(self: *BF_array) void {
+        var reader = std.io.getStdIn().reader();
+        var buffer: [1]u8 = undefined;
+
+        _ = reader.read(&buffer) catch |err| {
+            std.debug.print("Error reading input: {}\n", .{err});
+        };
+
+        self.getCurrentCell().content = buffer[0];
     }
 
     pub fn execute(self: *BF_array, action: u8) void {
@@ -87,6 +98,7 @@ const BF_array = struct {
             Tokens.MOVE_LEFT => self.movePointerLeft(),
             Tokens.MOVE_RIGHT => self.movePointerRight(),
             Tokens.PRINT => self.printCurrentCell(),
+            Tokens.SCAN => self.captureKeyStroke(),
             else => {},
         }
     }
